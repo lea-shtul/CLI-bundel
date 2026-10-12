@@ -1,0 +1,198 @@
+// Author: Leah
+
+// Source: a.cs
+
+// Source: b.cs
+
+// Source: c.cs
+
+// Source: Program.cs
+
+using System.CommandLine;
+
+
+var bundelOutputOption = new Option<FileInfo>("--output", "-o") { Description = "File path and name" };
+var bundelLanguOption = new Option<string[]>("--language", "-l") { Required = true, Description = "choosing code language ", AllowMultipleArgumentsPerToken = true };
+var bundelNoteOption = new Option<bool>("--note", "-n") { Description = "write as a note the source of the code" };
+var bundelSortOption = new Option<string>("--sort", "-s")
+{
+    Description = "sort the files: 'name' (alphabetic, default) or 'language'",
+    DefaultValueFactory = result => "name"
+};
+bundelSortOption.AcceptOnlyFromAmong("name", "language");
+var bundelRemoveEmptyLinesOption = new Option<bool>("--remove-empty-lines", "-rel") { Description = "delete empty lines from the files" };
+var bundelAuthorOption = new Option<string>("--author", "-a") { Description = "write the author" };
+
+
+var bundler = new Command("bundler", "Bundle code files to a single file");
+
+
+
+bundler.Options.Add(bundelLanguOption);
+bundler.Options.Add(bundelOutputOption);
+bundler.Options.Add(bundelNoteOption);
+bundler.Options.Add(bundelSortOption);
+bundler.Options.Add(bundelRemoveEmptyLinesOption);
+bundler.Options.Add(bundelAuthorOption);
+
+
+string[] excludedFolders = { "bin", "obj", "debug", "release", "node_modules", ".git", ".vs" };
+var languageExtensions = new Dictionary<string, string>
+{
+    { "cs", ".cs" },
+    { "java", ".java" },
+    { "python", ".py" },
+    { "js", ".js" },
+    { "html", ".html" },
+    { "css", ".css" },
+    { "sql", ".sql" }
+};
+
+
+
+bundler.SetAction((parseResult) =>
+{
+
+
+
+    string[] language = parseResult.GetValue(bundelLanguOption);
+    FileInfo? output = parseResult.GetValue(bundelOutputOption);
+    //StreamWriter writer = new StreamWriter(output.FullName);
+    bool note = parseResult.GetValue(bundelNoteOption);
+    string? sort = parseResult.GetValue(bundelSortOption);
+    bool removeEmptyLines = parseResult.GetValue(bundelRemoveEmptyLinesOption);
+    string? author = parseResult.GetValue(bundelAuthorOption);
+
+
+
+    if (output == null)
+    {
+        Console.WriteLine(@"you must enter -o 'YOUR NEWFILE NAME AND PAHT FOR EXAMPLE: C:\folder\bundle.txt");
+        return;
+    }
+
+
+
+
+
+    string currentDir = Directory.GetCurrentDirectory();
+
+    string[] allFiles = Directory.GetFiles(currentDir, "*", SearchOption.AllDirectories);
+
+    var filteredFiles = allFiles.Where(file =>
+    !file.Split(Path.DirectorySeparatorChar)
+         .Any(part => excludedFolders.Contains(part.ToLower()))).ToList();
+
+    List<string> extensions;
+
+    if (language.Contains("all"))
+    {
+        extensions = languageExtensions.Values.ToList();
+    }
+    else
+    {
+        extensions = new List<string>();
+        foreach (string lang in language)
+        {
+            if (!languageExtensions.ContainsKey(lang.ToLower()))
+            {
+                Console.WriteLine($"Error: language '{lang}' is not supported.");
+                return;
+            }
+            extensions.Add(languageExtensions[lang.ToLower()]);
+        }
+    }
+
+    var codeFiles = filteredFiles
+    .Where(file => extensions.Contains(Path.GetExtension(file).ToLower()))
+    .ToList();
+
+    if (codeFiles.Count == 0)
+    {
+        Console.WriteLine("No code files found for the selected languages.");
+        return;
+    }
+
+   
+
+
+
+    if (sort == "language")
+    {
+        codeFiles = codeFiles
+            .OrderBy(file => Path.GetExtension(file))
+            .ThenBy(file => Path.GetFileName(file))
+            .ToList();
+    }
+    else
+    {
+        codeFiles = codeFiles
+            .OrderBy(file => Path.GetFileName(file))
+            .ToList();
+    }
+
+    foreach (string f in codeFiles)
+    {
+        Console.WriteLine(f);
+    }
+
+
+    try
+    {
+
+
+        // יוצר קובץ חדש, או דורס אם הוא קיים
+        using (StreamWriter writer = new StreamWriter(output.FullName))
+        {
+            if (!string.IsNullOrWhiteSpace(author))
+            {
+                writer.WriteLine($"// Author: {author}");
+                writer.WriteLine();
+            }
+
+
+            foreach (string file in codeFiles)
+            {
+                if (note)
+                {
+                    string relativePath = Path.GetRelativePath(currentDir, file);
+                    writer.WriteLine($"// Source: {relativePath}");
+                }
+                string[] lines = File.ReadAllLines(file);
+
+                foreach (string line in lines)
+                {
+                    if (!(removeEmptyLines && line.Trim() == ""))
+                        writer.WriteLine(line);
+                    
+                }
+
+                writer.WriteLine(); // שורה ריקה בין קובץ לקובץ
+            }
+        }
+
+        Console.WriteLine($"Bundle created successfully: {output.FullName}");
+    }
+    catch (IOException ex)
+    {
+        // למשל: הקובץ פתוח כרגע בתוכנה אחרת ולכן אי אפשר לדרוס אותו
+        Console.WriteLine($"Error: could not write the file. {ex.Message}");
+    }
+    catch (Exception ex)
+    {
+        // כל שגיאה אחרת שלא צפינו
+        Console.WriteLine($"Unexpected error: {ex.Message}");
+    }
+
+
+
+});
+
+
+var rootCommand = new RootCommand("Root command for Bundler CLI");
+
+rootCommand.Subcommands.Add(bundler);
+
+
+rootCommand.Parse(args).Invoke();
+
